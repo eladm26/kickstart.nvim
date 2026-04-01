@@ -189,6 +189,10 @@ vim.diagnostic.config {
 
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
+-- Buffer navigation
+vim.keymap.set('n', '<Tab>', ':BufferLineCycleNext<CR>', { desc = 'Next buffer' })
+vim.keymap.set('n', '<S-Tab>', ':BufferLineCyclePrev<CR>', { desc = 'Previous buffer' })
+
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
 -- is not what someone will guess without a bit more experience.
@@ -228,6 +232,18 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   desc = 'Highlight when yanking (copying) text',
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
   callback = function() vim.hl.on_yank() end,
+})
+
+-- Auto-save when leaving insert mode or when text changes in normal mode
+vim.api.nvim_create_autocmd({ 'InsertLeave', 'TextChanged' }, {
+  desc = 'Auto-save modified buffers',
+  group = vim.api.nvim_create_augroup('kickstart-auto-save', { clear = true }),
+  callback = function(event)
+    local buf = event.buf
+    if vim.bo[buf].modified and vim.bo[buf].buftype == '' and vim.fn.bufname(buf) ~= '' then
+      vim.api.nvim_buf_call(buf, function() vim.cmd 'silent! write' end)
+    end
+  end,
 })
 
 -- [[ Install `lazy.nvim` plugin manager ]]
@@ -691,8 +707,20 @@ require('lazy').setup({
         -- clangd = {},
         gopls = {},
         bashls = {},
+        yamlls = {},
         lua_ls = {},
-        -- pyright = {},
+        basedpyright = {
+          settings = {
+            basedpyright = {
+              analysis = {
+                autoSearchPaths = true,
+                useLibraryCodeForTypes = true,
+                diagnosticMode = 'openFilesOnly',
+                typeCheckingMode = 'standard',
+              },
+            },
+          },
+        },
         -- rust_analyzer = {},
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -743,6 +771,11 @@ require('lazy').setup({
       require('mason-tool-installer').setup {
         ensure_installed = {
           'stylua', -- Lua formatter
+          'basedpyright', -- Python LSP
+          'ruff', -- Python linter & formatter
+          'debugpy', -- Python debugger
+          'yaml-language-server', -- YAML LSP (K8s, docker-compose, etc.)
+          'helm-ls', -- Helm chart support
         },
       }
 
@@ -856,7 +889,8 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
-        go = { 'goimports', 'gofmt' },
+        python = { 'ruff_format', 'ruff_organize_imports' },
+        -- go = { 'goimports', 'gofmt' },
         javascript = { 'prettierd', 'prettier', stop_after_first = true },
         typescript = { 'prettierd', 'prettier', stop_after_first = true },
         javascriptreact = { 'prettierd', 'prettier', stop_after_first = true },
@@ -958,6 +992,28 @@ require('lazy').setup({
     },
   },
 
+  {
+    'akinsho/bufferline.nvim',
+    version = '*',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    opts = {
+      options = {
+        show_buffer_close_icons = false,
+        show_close_icon = false,
+        name_formatter = function(buf)
+          return vim.fn.fnamemodify(buf.path, ':t')
+        end,
+      },
+    },
+  },
+
+  {
+    'folke/snacks.nvim',
+    opts = {
+      input = { enabled = true },
+    },
+  },
+
   { -- You can easily change to a different colorscheme.
     -- Change the name of the colorscheme plugin below, and then
     -- change the command in the config to whatever the name of that colorscheme is.
@@ -1039,6 +1095,13 @@ require('lazy').setup({
     end,
   },
 
+  {
+    'nvim-treesitter/nvim-treesitter-context',
+    opts = {
+      max_lines = 3,
+    },
+  },
+
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
     lazy = false,
@@ -1046,7 +1109,7 @@ require('lazy').setup({
     branch = 'main',
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter-intro`
     config = function()
-      local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+      local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'python', 'query', 'vim', 'vimdoc', 'yaml', 'helm' }
       require('nvim-treesitter').install(parsers)
       vim.api.nvim_create_autocmd('FileType', {
         callback = function(args)

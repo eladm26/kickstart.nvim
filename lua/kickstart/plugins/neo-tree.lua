@@ -18,6 +18,10 @@ return {
   ---@module 'neo-tree'
   ---@type neotree.Config
   opts = {
+    default_component_configs = {
+      file_size = { enabled = false },
+      last_modified = { enabled = false },
+    },
     filesystem = {
       window = {
         mappings = {
