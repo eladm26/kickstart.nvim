@@ -7,16 +7,9 @@ return {
   },
   config = function()
     require('go').setup {
-      lsp_cfg = true, -- THIS IS THE KEY - enables gopls
+      lsp_cfg = false, -- Let mason-lspconfig handle gopls
     }
-    local format_sync_grp = vim.api.nvim_create_augroup('GoFormat', {})
-    vim.api.nvim_create_autocmd('BufWritePre', {
-      pattern = '*.go',
-      callback = function()
-        require('go.format').goimports()
-      end,
-      group = format_sync_grp,
-    })
+    -- Formatting handled by conform.nvim (goimports + gofmt)
   end,
   event = { 'CmdlineEnter' },
   ft = { 'go', 'gomod' },

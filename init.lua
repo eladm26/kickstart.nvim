@@ -164,6 +164,9 @@ vim.o.scrolloff = 10
 -- See `:help 'confirm'`
 vim.o.confirm = true
 
+-- Rounded borders on popup menus (new in 0.12)
+vim.o.pumborder = 'rounded'
+
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
 
@@ -176,7 +179,7 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 vim.diagnostic.config {
   update_in_insert = false,
   severity_sort = true,
-  float = { border = 'rounded', source = 'if_many' },
+  float = { border = 'rounded', source = true },
   underline = { severity = { min = vim.diagnostic.severity.WARN } },
 
   -- Can switch between these as you prefer
@@ -188,6 +191,8 @@ vim.diagnostic.config {
 }
 
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+
+vim.keymap.set('n', '<leader>u', '<cmd>Undotree<CR>', { desc = '[U]ndo tree' })
 
 -- Buffer navigation
 vim.keymap.set('n', '<Tab>', ':BufferLineCycleNext<CR>', { desc = 'Next buffer' })
@@ -249,7 +254,7 @@ vim.api.nvim_create_autocmd({ 'InsertLeave', 'TextChanged' }, {
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
-if not (vim.uv or vim.loop).fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
   local lazyrepo = 'https://github.com/folke/lazy.nvim.git'
   local out = vim.fn.system { 'git', 'clone', '--filter=blob:none', '--branch=stable', lazyrepo, lazypath }
   if vim.v.shell_error ~= 0 then error('Error cloning lazy.nvim:\n' .. out) end
@@ -398,7 +403,7 @@ require('lazy').setup({
     -- Note: If you customize your config for yourself,
     -- it’s best to remove the Telescope plugin config entirely
     -- instead of just disabling it here, to keep your config clean.
-    enabled = true,
+    enabled = false,
     event = 'VimEnter',
     dependencies = {
       'nvim-lua/plenary.nvim',
@@ -645,13 +650,7 @@ require('lazy').setup({
             vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
           end
 
-          -- Rename the variable under your cursor.
-          --  Most Language Servers support renaming across files, etc.
-          map('grn', vim.lsp.buf.rename, '[R]e[n]ame')
-
-          -- Execute a code action, usually your cursor needs to be on top of an error
-          -- or a suggestion from your LSP for this to activate.
-          map('gra', vim.lsp.buf.code_action, '[G]oto Code [A]ction', { 'n', 'x' })
+          -- NOTE: grn (rename) and gra (code action) are now built-in defaults in Neovim 0.12
 
           -- WARN: This is not Goto Definition, this is Goto Declaration.
           --  For example, in C this would take you to the header.
@@ -705,7 +704,15 @@ require('lazy').setup({
       ---@type table<string, vim.lsp.Config>
       local servers = {
         -- clangd = {},
-        gopls = {},
+        gopls = {
+          settings = {
+            gopls = {
+              -- Speed up workspace symbol search (gW): only search workspace
+              -- packages, skipping dependencies and the stdlib.
+              symbolScope = 'workspace',
+            },
+          },
+        },
         bashls = {},
         yamlls = {},
         lua_ls = {},
@@ -729,37 +736,12 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
 
-        stylua = {}, -- Used to format Lua code
-
-        -- Special Lua Config, as recommended by neovim help docs
-        lua_ls = {
-          on_init = function(client)
-            if client.workspace_folders then
-              local path = client.workspace_folders[1].name
-              if path ~= vim.fn.stdpath 'config' and (vim.uv.fs_stat(path .. '/.luarc.json') or vim.uv.fs_stat(path .. '/.luarc.jsonc')) then return end
-            end
-
-            client.config.settings.Lua = vim.tbl_deep_extend('force', client.config.settings.Lua, {
-              runtime = {
-                version = 'LuaJIT',
-                path = { 'lua/?.lua', 'lua/?/init.lua' },
-              },
-              workspace = {
-                checkThirdParty = false,
-                -- NOTE: this is a lot slower and will cause issues when working on your own configuration.
-                --  See https://github.com/neovim/nvim-lspconfig/issues/3189
-                library = vim.tbl_extend('force', vim.api.nvim_get_runtime_file('', true), {
-                  '${3rd}/luv/library',
-                  '${3rd}/busted/library',
-                }),
-              },
-            })
-          end,
-          settings = {
-            Lua = {},
-          },
-        },
       }
+
+      -- Configure LSP servers BEFORE mason-lspconfig enables them
+      for name, server in pairs(servers) do
+        vim.lsp.config(name, server)
+      end
 
       -- mason-lspconfig handles LSP installation and name mapping
       require('mason-lspconfig').setup {
@@ -776,13 +758,9 @@ require('lazy').setup({
           'debugpy', -- Python debugger
           'yaml-language-server', -- YAML LSP (K8s, docker-compose, etc.)
           'helm-ls', -- Helm chart support
+          'prettierd', -- JSON/JS/TS formatter
         },
       }
-
-      -- Configure LSP servers with capabilities
-      for name, server in pairs(servers) do
-        vim.lsp.config(name, server)
-      end
 
       -- Special Lua Config, as recommended by neovim help docs
       vim.lsp.config('lua_ls', {
@@ -890,11 +868,13 @@ require('lazy').setup({
       formatters_by_ft = {
         lua = { 'stylua' },
         python = { 'ruff_format', 'ruff_organize_imports' },
-        -- go = { 'goimports', 'gofmt' },
+        go = { 'goimports', 'gofmt' },
         javascript = { 'prettierd', 'prettier', stop_after_first = true },
         typescript = { 'prettierd', 'prettier', stop_after_first = true },
         javascriptreact = { 'prettierd', 'prettier', stop_after_first = true },
         typescriptreact = { 'prettierd', 'prettier', stop_after_first = true },
+        json = { 'prettierd', 'prettier', stop_after_first = true },
+        jsonc = { 'prettierd', 'prettier', stop_after_first = true },
       },
     },
   },
@@ -985,7 +965,7 @@ require('lazy').setup({
       -- the rust implementation via `'prefer_rust_with_warning'`
       --
       -- See :h blink-cmp-config-fuzzy for more information
-      fuzzy = { implementation = 'lua' },
+      fuzzy = { implementation = 'prefer_rust_with_warning' },
 
       -- Shows a signature help window while you type arguments for a function
       signature = { enabled = true },
@@ -1009,8 +989,34 @@ require('lazy').setup({
 
   {
     'folke/snacks.nvim',
+    priority = 1000,
+    lazy = false,
+    ---@type snacks.Config
     opts = {
       input = { enabled = true },
+      picker = { enabled = true },
+    },
+    keys = {
+      { '<leader>sh', function() Snacks.picker.help() end, desc = '[S]earch [H]elp' },
+      { '<leader>sk', function() Snacks.picker.keymaps() end, desc = '[S]earch [K]eymaps' },
+      { '<leader>sf', function() Snacks.picker.files { hidden = true, ignored = true } end, desc = '[S]earch [F]iles' },
+      { '<leader>ss', function() Snacks.picker.pickers() end, desc = '[S]earch [S]elect Picker' },
+      { '<leader>sw', function() Snacks.picker.grep_word() end, mode = { 'n', 'x' }, desc = '[S]earch current [W]ord' },
+      { '<leader>sg', function() Snacks.picker.grep() end, desc = '[S]earch by [G]rep' },
+      { '<leader>sd', function() Snacks.picker.diagnostics() end, desc = '[S]earch [D]iagnostics' },
+      { '<leader>sr', function() Snacks.picker.resume() end, desc = '[S]earch [R]esume' },
+      { '<leader>s.', function() Snacks.picker.recent() end, desc = '[S]earch Recent Files' },
+      { '<leader>sc', function() Snacks.picker.commands() end, desc = '[S]earch [C]ommands' },
+      { '<leader><leader>', function() Snacks.picker.buffers() end, desc = '[ ] Find existing buffers' },
+      { '<leader>/', function() Snacks.picker.lines() end, desc = '[/] Fuzzily search in current buffer' },
+      { '<leader>s/', function() Snacks.picker.grep_buffers() end, desc = '[S]earch [/] in Open Files' },
+      { '<leader>sn', function() Snacks.picker.files { cwd = vim.fn.stdpath 'config' } end, desc = '[S]earch [N]eovim files' },
+      { 'grr', function() Snacks.picker.lsp_references() end, desc = '[G]oto [R]eferences' },
+      { 'gri', function() Snacks.picker.lsp_implementations() end, desc = '[G]oto [I]mplementation' },
+      { 'grd', function() Snacks.picker.lsp_definitions() end, desc = '[G]oto [D]efinition' },
+      { 'grt', function() Snacks.picker.lsp_type_definitions() end, desc = '[G]oto [T]ype Definition' },
+      { 'gO', function() Snacks.picker.lsp_symbols() end, desc = 'Open Document Symbols' },
+      { 'gW', function() Snacks.picker.lsp_workspace_symbols() end, desc = 'Open Workspace Symbols' },
     },
   },
 
@@ -1069,6 +1075,13 @@ require('lazy').setup({
       --  - yinq - [Y]ank [I]nside [N]ext [Q]uote
       --  - ci'  - [C]hange [I]nside [']quote
       require('mini.ai').setup { n_lines = 500 }
+
+      -- Override mini.ai's an/in with Neovim 0.12 treesitter node selection
+      local ts_select = require 'vim.treesitter._select'
+      vim.keymap.set('x', 'an', ts_select.select_parent, { desc = 'Select parent treesitter node' })
+      vim.keymap.set('x', 'in', ts_select.select_child, { desc = 'Select child treesitter node' })
+      vim.keymap.set('x', ']n', ts_select.select_next, { desc = 'Select next treesitter node' })
+      vim.keymap.set('x', '[n', ts_select.select_prev, { desc = 'Select prev treesitter node' })
 
       -- Add/delete/replace surroundings (brackets, quotes, etc.)
       --
@@ -1182,6 +1195,9 @@ require('lazy').setup({
     },
   },
 })
+
+-- Built-in undo tree visualizer (new in 0.12)
+vim.cmd.packadd('nvim.undotree')
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
